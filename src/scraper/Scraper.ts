@@ -10,6 +10,7 @@ export interface ScrapingOptions {
   extractText?: boolean;
   extractLinks?: boolean;
   extractImages?: boolean;
+  removeClassNames?: string[] | boolean;
 }
 
 export interface ScrapingResult {
@@ -42,6 +43,7 @@ export class Scraper {
       extractText: false,
       extractLinks: false,
       extractImages: false,
+      removeClassNames: true,
     }
   ): Promise<ScrapingResult> {
     const validationError = this.security.assertAllowedUrl(options.url);
@@ -81,9 +83,7 @@ export class Scraper {
 
       if (options.extractText) {
         Logger.debug("Extracting text...");
-        result.text = await page.evaluate(() => {
-          return document.body.innerText;
-        });
+        result.text = await this.extractText(page, options.removeClassNames);
       }
 
       if (options.extractLinks) {
@@ -122,13 +122,151 @@ export class Scraper {
     }
   }
 
-  private async takeFullPageScreenshot(page: Page, path: string) {
-    await page.screenshot({ path, fullPage: true });
+  private async extractText(
+    page: Page,
+    removeClassNamesOpt: string[] | boolean = true
+  ) {
+    page.on("console", (message) => {
+      Logger.browser(message.type(), message.text());
+    });
+
+    const html = await page.evaluate(
+      async (removeClassNames: string[] | boolean) => {
+        // Create a clone of the document to avoid modifying the original
+        const doc = document.cloneNode(true) as Document;
+
+        // Remove unnecessary elements but keep important meta tags and links
+        const selectors = [
+          "script",
+          "style",
+          "noscript",
+          "iframe",
+          "object",
+          "embed",
+          "svg",
+          "canvas",
+          "audio",
+          "video",
+          "link[rel='stylesheet']",
+          "link[rel='icon']",
+          "link[rel='preload']",
+        ];
+        const elementsToRemove = doc.querySelectorAll(selectors.join(","));
+
+        // Remove HTML comments
+        const walker = doc.createTreeWalker(doc, NodeFilter.SHOW_COMMENT, null);
+        let comment;
+        while ((comment = walker.nextNode())) {
+          if (comment.parentNode) {
+            comment.parentNode.removeChild(comment);
+          }
+        }
+
+        const removeOrReplaceElement = async (element: Element) => {
+          // handle video iframes
+          if (element.tagName.toLowerCase() === "iframe") {
+            const src = element.getAttribute("src");
+            const isVideo =
+              src && (src.includes("youtube.com") || src.includes("vimeo.com"));
+            if (isVideo) {
+              const link = doc.createElement("a");
+              link.href = src!;
+              link.textContent = `[Video: ${src}]`;
+              element.parentNode?.replaceChild(link, element);
+              return false;
+            }
+          }
+
+          element.remove();
+          return true;
+        };
+
+        console.log("elementsToRemove", elementsToRemove.length);
+
+        let itemsRemoved = 0;
+        const itemsToRemove = Array.from(elementsToRemove);
+        for (const el of itemsToRemove) {
+          const removed = await removeOrReplaceElement(el);
+          if (removed) {
+            itemsRemoved++;
+          }
+        }
+
+        console.info(`Removed ${itemsRemoved} elements`);
+
+        const removeClassNamesFromElement = (
+          element: Element,
+          classNames: string[] | boolean
+        ) => {
+          if (!classNames) {
+            return;
+          }
+          if (classNames === true) {
+            element.removeAttribute("class");
+          } else {
+            element.classList.remove(...classNames);
+          }
+        };
+
+        if (removeClassNames) {
+          const selector =
+            removeClassNames === true
+              ? "*"
+              : removeClassNames.map((className) => `.${className}`).join(",");
+          doc
+            .querySelectorAll(selector)
+            .forEach((el) => removeClassNamesFromElement(el, removeClassNames));
+        }
+
+        // Remove style attributes from all elements
+        doc.querySelectorAll("*").forEach((el) => {
+          el.removeAttribute("style");
+        });
+
+        return doc.documentElement.outerHTML;
+      },
+      removeClassNamesOpt
+    );
+
+    // Get the cleaned HTML and remove unnecessary whitespace
+    return this.cleanWhitespace(html);
   }
 
-  private async extractText(page: Page) {
-    return await page.evaluate(() => {
-      return document.body.innerText;
-    });
+  private cleanWhitespace(html: string): string {
+    return (
+      html
+        // Remove multiple consecutive newlines
+        .replace(/\n+/g, "\n")
+        // Remove comments with an empty string
+        .replace(/<!--\s*-->/g, "")
+        // Remove empty class attributes
+        .replace(/class="\s*"/g, "")
+        // Remove style attributes
+        .replace(/\s+style="[^"]*"/g, "")
+        // Remove whitespace between tags
+        .replace(/>\s+</g, "><")
+        // Remove leading/trailing whitespace from lines
+        .replace(/^\s+|\s+$/gm, "")
+        // Remove multiple consecutive spaces
+        .replace(/\s+/g, " ")
+        // Remove spaces before closing tags
+        .replace(/\s+>/g, ">")
+        // Remove spaces after opening tags
+        .replace(/<\s+/g, "<")
+        // Remove spaces around attributes
+        .replace(/\s*=\s*/g, "=")
+        // Remove spaces between attributes
+        .replace(/"\s+/g, '" ')
+        // Remove spaces before self-closing tags
+        .replace(/\s+\/>/g, "/>")
+        // Remove spaces after self-closing tags
+        .replace(/\/>\s+/g, "/>")
+        // Remove spaces before closing brackets
+        .replace(/\s+>/g, ">")
+        // Remove spaces after opening brackets
+        .replace(/<\s+/g, "<")
+        // Trim the final result
+        .trim()
+    );
   }
 }

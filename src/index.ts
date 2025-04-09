@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { Scraper, ScrapingOptions } from "./scraper/Scraper";
 import * as fs from "fs";
 import * as path from "path";
-
+import { Config } from "./config/Config";
 const program = new Command();
 
 program
@@ -27,6 +27,7 @@ program
   .option("-o, --output <file>", "Output file path (JSON)")
   .action(async (options) => {
     try {
+      Config.init();
       const scraper = new Scraper();
       await scraper.initialize();
 
@@ -50,7 +51,8 @@ program
         fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
         console.log(`Results saved to ${options.output}`);
       } else {
-        console.log(JSON.stringify(result, null, 2));
+        console.log(result.text);
+        // console.log(JSON.stringify(result, null, 2));
       }
 
       await scraper.close();

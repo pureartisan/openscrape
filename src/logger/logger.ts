@@ -44,6 +44,11 @@ class Logger {
       console.debug(...args);
     }
   }
+
+  browser(type: string, ...args: any[]) {
+    const logFn = (console as any)[type] || console.log;
+    logFn(`BROWSER: `, ...args);
+  }
 }
 
 const singleton = new Logger();
