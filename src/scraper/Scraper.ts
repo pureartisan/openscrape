@@ -1,10 +1,12 @@
-import { chromium, Browser } from "playwright";
+import { chromium, Browser, Page } from "playwright";
 import { Logger } from "../logger/logger";
 import { Security } from "./Security";
+
 export interface ScrapingOptions {
   url: string;
   waitForSelector?: string;
   screenshot?: boolean;
+  screenshotFullPage?: boolean;
   extractText?: boolean;
   extractLinks?: boolean;
   extractImages?: boolean;
@@ -31,7 +33,17 @@ export class Scraper {
     Logger.info("Browser initialized");
   }
 
-  async scrape(options: ScrapingOptions): Promise<ScrapingResult> {
+  async scrape(
+    options: ScrapingOptions = {
+      url: "",
+      waitForSelector: "",
+      screenshot: false,
+      screenshotFullPage: false,
+      extractText: false,
+      extractLinks: false,
+      extractImages: false,
+    }
+  ): Promise<ScrapingResult> {
     const validationError = this.security.assertAllowedUrl(options.url);
     if (validationError) {
       throw validationError;
@@ -60,7 +72,10 @@ export class Scraper {
       if (options.screenshot) {
         Logger.debug("Taking screenshot...");
         const screenshotPath = `screenshots/${Date.now()}.png`;
-        await page.screenshot({ path: screenshotPath, fullPage: true });
+        await page.screenshot({
+          path: screenshotPath,
+          fullPage: options.screenshotFullPage,
+        });
         result.screenshotPath = screenshotPath;
       }
 
@@ -105,5 +120,15 @@ export class Scraper {
       await this.browser.close();
       this.browser = null;
     }
+  }
+
+  private async takeFullPageScreenshot(page: Page, path: string) {
+    await page.screenshot({ path, fullPage: true });
+  }
+
+  private async extractText(page: Page) {
+    return await page.evaluate(() => {
+      return document.body.innerText;
+    });
   }
 }

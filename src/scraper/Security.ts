@@ -25,6 +25,10 @@ export class Security {
 
   assertAllowedUrl(url: string): string | undefined {
     try {
+      if (!url) {
+        return "Invalid URL";
+      }
+
       const parsedUrl = new URL(url);
 
       // Check for blocked protocols
