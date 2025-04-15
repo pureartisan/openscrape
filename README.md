@@ -17,7 +17,7 @@ An open-source web scraping tool with LLM-ready data extraction capabilities, bu
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/openscrape.git
+git clone https://github.com/pureatisan/openscrape.git
 cd openscrape
 
 # Install dependencies
